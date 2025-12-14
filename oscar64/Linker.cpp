@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include "CompilerTypes.h"
 #include "Compression.h"
+#include "InterCode.h"
 
 LinkerRegion::LinkerRegion(void)
 	: mSections(nullptr), mFreeChunks(FreeChunk{ 0, 0 } ), mLastObject(nullptr), mInlayObject(nullptr), mCartridgeBanks(0)
@@ -838,6 +839,87 @@ void LinkerRegion::PlaceStackSection(LinkerSection* stackSection, LinkerSection*
 	}
 }
 
+void Linker::PrintStackAllocation(LinkerSection* section, GrowingArray<LinkerSection*>& visited, int indent)
+{
+	if (!section)
+		return;
+
+	// Check if we've already visited this section
+	for (int i = 0; i < visited.Size(); i++)
+	{
+		if (visited[i] == section)
+			return; // Already printed this section
+	}
+	visited.Push(section);
+
+	// Count referenced objects in this section
+	int numObjects = 0;
+	for (int i = 0; i < section->mObjects.Size(); i++)
+	{
+		if (section->mObjects[i]->mFlags & LOBJF_REFERENCED)
+			numObjects++;
+	}
+
+	// Skip 0-byte sections that have no objects
+	if (section->mSize == 0 && numObjects == 0 && section->mSections.Size() == 0)
+		return;
+
+	// Print section info
+	const char* indentStr = "  ";
+	for (int i = 0; i < indent; i++)
+		printf("%s", indentStr);
+
+	if (section->mIdent && section->mIdent->mString)
+		printf("Section: %s", section->mIdent->mString);
+	else
+		printf("Section: <unnamed>");
+	
+	printf(" (size: %d bytes", section->mSize);
+	if (section->mStart < 0x10000)
+		printf(", start: $%04x", section->mStart);
+	printf(")\n");
+
+	// Print objects in this section
+	for (int i = 0; i < section->mObjects.Size(); i++)
+	{
+		LinkerObject* lobj = section->mObjects[i];
+		if (lobj->mFlags & LOBJF_REFERENCED)
+		{
+			for (int j = 0; j < indent + 1; j++)
+				printf("%s", indentStr);
+
+			// Object name
+			if (lobj->mIdent && lobj->mIdent->mString)
+				printf("  %s", lobj->mIdent->mString);
+			else
+				printf("  <unnamed>");
+
+			// Size
+			printf(": %d bytes", lobj->mSize);
+
+			// Variable name if it's a local variable
+			if (lobj->mFlags & LOBJF_LOCAL_VAR && lobj->mVariable && lobj->mVariable->mIdent && lobj->mVariable->mIdent->mString)
+				printf(" (variable: %s)", lobj->mVariable->mIdent->mString);
+
+			// Procedure name if available
+			if (lobj->mOwnerProc && lobj->mOwnerProc->mIdent && lobj->mOwnerProc->mIdent->mString)
+				printf(" [in %s]", lobj->mOwnerProc->mIdent->mString);
+
+			// Address if placed
+			if (lobj->mFlags & LOBJF_PLACED && lobj->mAddress < 0x10000)
+				printf(" @ $%04x", lobj->mAddress);
+
+			printf("\n");
+		}
+	}
+
+	// Recursively print nested sections
+	for (int i = 0; i < section->mSections.Size(); i++)
+	{
+		PrintStackAllocation(section->mSections[i], visited, indent + 1);
+	}
+}
+
 void Linker::CopyObjects(bool inlays)
 {
 	bool	errors = false;
@@ -1124,6 +1206,15 @@ void Linker::Link(void)
 					if (lsec->mStart < lrgn->mEnd)
 					{
 						Location	loc;
+						printf("\nStack allocation debug information:\n");
+						printf("Stack section size: %d bytes\n", lsec->mSize);
+						printf("Stack section start: $%04x\n", lsec->mStart);
+						printf("Region end: $%04x\n", lrgn->mEnd);
+						printf("Overflow: %d bytes\n\n", lrgn->mEnd - lsec->mStart);
+						printf("Stack allocation breakdown:\n");
+						GrowingArray<LinkerSection*> visited(nullptr);
+						PrintStackAllocation(lsec, visited, 0);
+						printf("\n");
 						mErrors->Error(loc, ERRR_INSUFFICIENT_MEMORY, "Static stack usage exceeds stack segment");
 					}
 

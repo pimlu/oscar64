@@ -331,6 +331,7 @@ protected:
 
 	bool Forwards(LinkerObject* pobj, LinkerObject* lobj);
 	void SortObjectsPartition(int l, int r);
+	void PrintStackAllocation(LinkerSection* section, GrowingArray<LinkerSection*>& visited, int indent = 0);
 
 	Errors* mErrors;
 };
