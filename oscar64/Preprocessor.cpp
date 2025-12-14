@@ -2,22 +2,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
-#include <stdio.h>
-
-static int gOpenFileCount = 0;
-
-static void UpdateFileCount(int delta, const char* operation, const char* filename)
-{
-	int oldCount = gOpenFileCount;
-	gOpenFileCount += delta;
-	if (oldCount != gOpenFileCount)
-	{
-		printf("[FILE COUNT] %s: %d -> %d", operation, oldCount, gOpenFileCount);
-		if (filename)
-			printf(" (%s)", filename);
-		printf("\n");
-	}
-}
 
 SourcePath::SourcePath(const char* path)
 {
@@ -272,6 +256,7 @@ bool SourceFile::ReadLine(char* line, ptrdiff_t limit)
 		case SFM_TEXT:
 			if (fgets(line, int(limit), mFile))
 				return true;
+			// EOF reached - fall through to close file
 			break;
 		case SFM_BINARY:
 			if (mLimit)
@@ -312,6 +297,8 @@ bool SourceFile::ReadLine(char* line, ptrdiff_t limit)
 			break;
 		}
 
+		// EOF or limit reached - close the file handle immediately to free the descriptor
+		// The SourceFile object stays alive for context, but the file is closed
 		fclose(mFile);
 		mFile = nullptr;
 	}
@@ -803,7 +790,6 @@ SourceFile::~SourceFile(void)
 {
 	if (mFile)
 	{
-		UpdateFileCount(-1, "DESTRUCTOR", mFileName);
 		fclose(mFile);
 		mFile = nullptr;
 	}
@@ -848,7 +834,6 @@ bool SourceFile::Open(const char* name, const char* path, SourceFileMode mode)
 		mFill = 0;
 		mPos = 0;
 
-		UpdateFileCount(1, "OPEN", mFileName);
 		return true;
 	}
 
@@ -859,7 +844,6 @@ void SourceFile::Close(void)
 {
 	if (mFile)
 	{
-		UpdateFileCount(-1, "CLOSE", mFileName);
 		fclose(mFile);
 		mFile = nullptr;
 	}
