@@ -1074,29 +1074,6 @@ Preprocessor::Preprocessor(Errors* errors)
 
 Preprocessor::~Preprocessor(void)
 {
-	// Clean up all remaining source files
-	while (mSource)
-	{
-		SourceFile* oldSource = mSource;
-		mSource = mSource->mUp;
-		delete oldSource;
-	}
-	
-	// Clean up source list if it exists
-	while (mSourceList)
-	{
-		SourceFile* oldSource = mSourceList;
-		mSourceList = mSourceList->mNext;
-		delete oldSource;
-	}
-	
-	// Clean up paths
-	while (mPaths)
-	{
-		SourcePath* oldPath = mPaths;
-		mPaths = mPaths->mNext;
-		delete oldPath;
-	}
 }
 
 void Preprocessor::AddPath(const char* path)
