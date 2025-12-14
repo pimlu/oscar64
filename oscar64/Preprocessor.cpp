@@ -2,6 +2,22 @@
 #include <string.h>
 #include <stdlib.h>
 #include <assert.h>
+#include <stdio.h>
+
+static int gOpenFileCount = 0;
+
+static void UpdateFileCount(int delta, const char* operation, const char* filename)
+{
+	int oldCount = gOpenFileCount;
+	gOpenFileCount += delta;
+	if (oldCount != gOpenFileCount)
+	{
+		printf("[FILE COUNT] %s: %d -> %d", operation, oldCount, gOpenFileCount);
+		if (filename)
+			printf(" (%s)", filename);
+		printf("\n");
+	}
+}
 
 SourcePath::SourcePath(const char* path)
 {
@@ -787,6 +803,7 @@ SourceFile::~SourceFile(void)
 {
 	if (mFile)
 	{
+		UpdateFileCount(-1, "DESTRUCTOR", mFileName);
 		fclose(mFile);
 		mFile = nullptr;
 	}
@@ -831,6 +848,7 @@ bool SourceFile::Open(const char* name, const char* path, SourceFileMode mode)
 		mFill = 0;
 		mPos = 0;
 
+		UpdateFileCount(1, "OPEN", mFileName);
 		return true;
 	}
 
@@ -841,6 +859,7 @@ void SourceFile::Close(void)
 {
 	if (mFile)
 	{
+		UpdateFileCount(-1, "CLOSE", mFileName);
 		fclose(mFile);
 		mFile = nullptr;
 	}
@@ -1016,14 +1035,19 @@ bool Preprocessor::OpenSource(const char * reason, const char* name, bool local)
 		return true;
 	}
 	else
+	{
+		delete source;  // Clean up if file open failed
 		return false;
+	}
 }
 
 bool Preprocessor::CloseSource(void)
 {
 	if (mSource)
 	{
+		SourceFile* oldSource = mSource;
 		mSource = mSource->mUp;
+		delete oldSource;  // Delete the old source file to close the file handle
 		if (mSource)
 		{
 			mLocation = mSource->mLocation;
@@ -1066,6 +1090,29 @@ Preprocessor::Preprocessor(Errors* errors)
 
 Preprocessor::~Preprocessor(void)
 {
+	// Clean up all remaining source files
+	while (mSource)
+	{
+		SourceFile* oldSource = mSource;
+		mSource = mSource->mUp;
+		delete oldSource;
+	}
+	
+	// Clean up source list if it exists
+	while (mSourceList)
+	{
+		SourceFile* oldSource = mSourceList;
+		mSourceList = mSourceList->mNext;
+		delete oldSource;
+	}
+	
+	// Clean up paths
+	while (mPaths)
+	{
+		SourcePath* oldPath = mPaths;
+		mPaths = mPaths->mNext;
+		delete oldPath;
+	}
 }
 
 void Preprocessor::AddPath(const char* path)
