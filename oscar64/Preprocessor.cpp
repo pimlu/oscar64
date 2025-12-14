@@ -1031,7 +1031,7 @@ bool Preprocessor::CloseSource(void)
 	{
 		SourceFile* oldSource = mSource;
 		mSource = mSource->mUp;
-		delete oldSource;  // Delete the old source file to close the file handle
+		oldSource->Close();  // Close the file descriptor but don't delete the object (to avoid use-after-free)
 		if (mSource)
 		{
 			mLocation = mSource->mLocation;
