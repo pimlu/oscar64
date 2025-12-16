@@ -6573,7 +6573,20 @@ Declaration* Parser::ParseDeclaration(Declaration * pdec, bool variable, bool ex
 						}
 						else
 						{
-							if (!ndec->mBase->IsSame(pdec->mBase))
+							// pdec should be a variable declaration at this point
+							// If it's not, or if mBase is null, something went wrong
+							if (pdec->mType != DT_VARIABLE && pdec->mType != DT_VARIABLE_REF)
+							{
+								mErrors->Error(ndec->mLocation, EERR_DUPLICATE_DEFINITION, "Duplicate declaration with different type", ndec->mIdent);
+								mErrors->Error(pdec->mLocation, EINFO_ORIGINAL_DEFINITION, "Original definition");
+								ndec = pdec;
+							}
+							else if (!pdec->mBase)
+							{
+								// Previous declaration had no type, use the new one
+								pdec->mBase = ndec->mBase;
+							}
+							else if (!ndec->mBase->IsSame(pdec->mBase))
 							{
 								if (ndec->mBase->mType == DT_TYPE_ARRAY && pdec->mBase->mType == DT_TYPE_ARRAY && ndec->mBase->mBase->IsSame(pdec->mBase->mBase) && pdec->mBase->mSize == 0)
 									pdec->mBase->mSize = ndec->mBase->mSize;
