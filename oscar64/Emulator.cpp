@@ -6,7 +6,10 @@ Emulator::Emulator(Linker* linker)
 	: mLinker(linker)
 {
 	for (int i = 0; i < 0x10000; i++)
+	{
 		mMemory[i] = 0;
+		mVolatileReads[i] = 0;
+	}
 	mJiffies = true;
 }
 
@@ -28,13 +31,19 @@ void Emulator::UpdateStatus(uint8 result)
 	if (result & 0x80) mRegP |= STATUS_SIGN;
 }
 
-void Emulator::UpdateStatusCarry(uint8 result, bool carry) 
+void Emulator::UpdateStatusCarry(uint8 result, bool carry)
 {
 	mRegP &= ~(STATUS_ZERO | STATUS_SIGN | STATUS_CARRY);
 	if (result == 0) mRegP |= STATUS_ZERO;
 	if (result & 0x80) mRegP |= STATUS_SIGN;
 	if (carry)
 		mRegP |= STATUS_CARRY;
+}
+
+uint8 Emulator::ReadMemory(int addr)
+{
+	mVolatileReads[addr]++;
+	return mMemory[addr];
 }
 
 void Emulator::DumpCycles(void)
@@ -123,7 +132,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 	{
 	case ASMIT_ADC:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		t = mRegA + addr + (mRegP & STATUS_CARRY);
 
 		mRegP = 0;
@@ -138,7 +147,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		break;
 	case ASMIT_AND:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		mRegA &= addr;
 		UpdateStatus(mRegA);
 		if (cross) cycles++;
@@ -152,7 +161,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		}
 		else
 		{
-			t = mMemory[addr] << 1;
+			t = ReadMemory(addr) << 1;
 			mMemory[addr] = t & 255;
 			UpdateStatusCarry(t & 255, t >= 256);
 			cycles += 2;
@@ -181,7 +190,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		}
 		break;
 	case ASMIT_BIT:
-		t = mMemory[addr];
+		t = ReadMemory(addr);
 		mRegP &= ~(STATUS_ZERO | STATUS_SIGN | STATUS_OVERFLOW);
 		if (t & 0x80) mRegP |= STATUS_SIGN;
 		if (t & 0x40) mRegP |= STATUS_OVERFLOW;
@@ -237,7 +246,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		break;
 	case ASMIT_CMP:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		t = mRegA + (addr ^ 0xff) + 1;
 
 		mRegP = 0;
@@ -251,7 +260,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		break;
 	case ASMIT_CPX:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		t = mRegX + (addr ^ 0xff) + 1;
 
 		mRegP = 0;
@@ -264,7 +273,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		break;
 	case ASMIT_CPY:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		t = mRegY + (addr ^ 0xff) + 1;
 
 		mRegP = 0;
@@ -284,7 +293,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		}
 		else
 		{
-			t = mMemory[addr] - 1;
+			t = ReadMemory(addr) - 1;
 			mMemory[addr] = t & 255;
 			UpdateStatus(t & 255);
 			cycles += 2;
@@ -303,7 +312,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		break;
 	case ASMIT_EOR:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		mRegA ^= addr;
 		UpdateStatus(mRegA);
 		if (cross) cycles++;
@@ -317,7 +326,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		}
 		else
 		{
-			t = mMemory[addr] + 1;
+			t = ReadMemory(addr) + 1;
 			mMemory[addr] = t & 255;
 			UpdateStatus(t & 255);
 			cycles += 2;
@@ -348,21 +357,21 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		break;
 	case ASMIT_LDA:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		mRegA = addr;
 		UpdateStatus(mRegA);
 		if (cross) cycles++;
 		break;
 	case ASMIT_LDX:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		mRegX = addr;
 		UpdateStatus(mRegX);
 		if (cross) cycles++;
 		break;
 	case ASMIT_LDY:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		mRegY = addr;
 		UpdateStatus(mRegY);
 		if (cross) cycles++;
@@ -377,8 +386,9 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		}
 		else
 		{
-			int	c = mMemory[addr] & 1;
-			t = mMemory[addr] >> 1;
+			uint8 val = ReadMemory(addr);
+			int	c = val & 1;
+			t = val >> 1;
 			mMemory[addr] = t & 255;
 			UpdateStatusCarry(t & 255, c != 0);
 			cycles += 2;
@@ -389,7 +399,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		break;
 	case ASMIT_ORA:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		mRegA |= addr;
 		UpdateStatus(mRegA);
 		if (cross) cycles++;
@@ -425,7 +435,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		}
 		else
 		{
-			t = (mMemory[addr] << 1) | (mRegP & STATUS_CARRY);;
+			t = (ReadMemory(addr) << 1) | (mRegP & STATUS_CARRY);;
 			mMemory[addr] = t & 255;
 			UpdateStatusCarry(t & 255, t >= 256);
 			cycles+=2;
@@ -442,8 +452,9 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		}
 		else
 		{
-			int	c = mMemory[addr] & 1;
-			t = (mMemory[addr] >> 1) | ((mRegP & STATUS_CARRY) << 7);
+			uint8 val = ReadMemory(addr);
+			int	c = val & 1;
+			t = (val >> 1) | ((mRegP & STATUS_CARRY) << 7);
 			mMemory[addr] = t & 255;
 			UpdateStatusCarry(t & 255, c != 0);
 			cycles += 2;
@@ -459,7 +470,7 @@ bool Emulator::EmulateInstruction(AsmInsType type, AsmInsMode mode, int addr, in
 		break;
 	case ASMIT_SBC:
 		if (mode != ASMIM_IMMEDIATE)
-			addr = mMemory[addr];
+			addr = ReadMemory(addr);
 		t = mRegA + (addr ^ 0xff) + (mRegP & STATUS_CARRY);
 
 		mRegP = 0;
@@ -799,7 +810,42 @@ int Emulator::Emulate(int startIP, int exitIP, int trace)
 			if (mMemory[i] != 0)
 				printf("ZP %02x : %02x\n", i, mMemory[i]);
 #endif
-		return int16(mMemory[BC_REG_ACCU] + 256 * mMemory[BC_REG_ACCU + 1]);
+		int result = int16(mMemory[BC_REG_ACCU] + 256 * mMemory[BC_REG_ACCU + 1]);
+
+		// Check for volatile read assertions using debug symbols
+		// Tests can define __volatile_read_checks array with metadata
+		if (result == 0 && mLinker)
+		{
+			LinkerObject* vrc = mLinker->FindObjectByName("__volatile_read_checks");
+			if (vrc)
+			{
+				printf("Checking volatile read assertions...\n");
+				int addr = vrc->mAddress;
+
+				// Read entries: [addr_low, addr_high, expected_count], terminated by 0xFFFF address
+				while (true)
+				{
+					int check_addr = mMemory[addr] + (mMemory[addr + 1] << 8);
+					if (check_addr == 0xFFFF)
+						break;
+
+					int expected = mMemory[addr + 2];
+
+					if (mVolatileReads[check_addr] != expected)
+					{
+						printf("ERROR: Volatile read assertion failed! Address 0x%04x: expected %d reads, got %d\n",
+							check_addr, expected, mVolatileReads[check_addr]);
+						return -1;
+					}
+					printf("OK: Volatile read assertion passed for address 0x%04x: %d reads\n",
+						check_addr, expected);
+
+					addr += 3;
+				}
+			}
+		}
+
+		return result;
 	}
 
 	return -1;
